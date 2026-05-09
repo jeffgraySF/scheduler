@@ -1,0 +1,8 @@
+---
+const { meetingType } = Astro.props;
+---
+<a class="card" href={`/${meetingType.slug}`}>
+  <div class="card-name">{meetingType.name}</div>
+  <div class="card-duration">{meetingType.duration} minutes</div>
+  <p class="card-description">{meetingType.description}</p>
+</a>

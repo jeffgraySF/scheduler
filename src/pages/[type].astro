@@ -1,0 +1,318 @@
+---
+import Base from '../layouts/Base.astro';
+import { config } from '../lib/config.js';
+
+export async function getStaticPaths() {
+  const { config } = await import('../lib/config.js');
+  return config.meetingTypes.map((mt) => ({
+    params: { type: mt.slug },
+    props: { meetingType: mt },
+  }));
+}
+
+const { meetingType } = Astro.props;
+const ownerName = config.owner.name;
+const bookingWindowDays = config.bookingWindowDays;
+
+// Serialize what the client-side script needs (no secrets).
+const clientData = {
+  slug: meetingType.slug,
+  name: meetingType.name,
+  duration: meetingType.duration,
+  questions: meetingType.questions ?? [],
+  ownerName,
+  bookingWindowDays,
+  availabilityDays: config.availability.days,
+};
+---
+<Base title={meetingType.name}>
+  <div id="booking-app" data-config={JSON.stringify(clientData)}>
+    <!-- STEP 1: pick a date -->
+    <section class="step active" data-step="date">
+      <div class="step-header">
+        <a href="/" class="btn back">←</a>
+        <div>
+          <h1 style="font-size: 1.5rem;">{meetingType.name}</h1>
+          <div class="muted">{meetingType.duration} minutes with {ownerName}</div>
+        </div>
+      </div>
+
+      <h2>Pick a date</h2>
+      <div id="month-nav" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
+        <button type="button" id="prev-month" class="btn" style="padding: 0.25rem 0.625rem;">‹</button>
+        <div id="month-label" style="font-weight: 600;"></div>
+        <button type="button" id="next-month" class="btn" style="padding: 0.25rem 0.625rem;">›</button>
+      </div>
+      <div class="calendar-grid" id="calendar"></div>
+    </section>
+
+    <!-- STEP 2: pick a slot -->
+    <section class="step" data-step="slot">
+      <div class="step-header">
+        <button type="button" class="btn back" data-back="date">←</button>
+        <div>
+          <h1 style="font-size: 1.5rem;">Available times</h1>
+          <div class="muted" id="slot-date-label"></div>
+        </div>
+      </div>
+      <div id="slot-status" class="muted">Loading…</div>
+      <div class="slot-list" id="slots"></div>
+    </section>
+
+    <!-- STEP 3: booking form -->
+    <section class="step" data-step="form">
+      <div class="step-header">
+        <button type="button" class="btn back" data-back="slot">←</button>
+        <div>
+          <h1 style="font-size: 1.5rem;">Your details</h1>
+          <div class="muted" id="form-slot-label"></div>
+        </div>
+      </div>
+
+      <form id="booking-form" class="stack">
+        <div class="field">
+          <label for="name">Name</label>
+          <input type="text" id="name" name="name" required autocomplete="name" />
+        </div>
+        <div class="field">
+          <label for="email">Email</label>
+          <input type="email" id="email" name="email" required autocomplete="email" />
+        </div>
+        <div id="custom-questions"></div>
+        <button type="submit" class="primary" id="submit-btn">Confirm booking</button>
+        <div id="form-error" class="error" style="display:none;"></div>
+      </form>
+    </section>
+
+    <!-- STEP 4: confirmation -->
+    <section class="step" data-step="done">
+      <h1>Booked ✓</h1>
+      <p id="confirm-msg"></p>
+      <p class="muted">A confirmation email is on its way. You can also <a id="gcal-add" href="#" target="_blank" rel="noopener">add this to Google Calendar</a>.</p>
+      <p><a href="/">← Back to home</a></p>
+    </section>
+  </div>
+</Base>
+
+<script>
+  const root = document.getElementById('booking-app');
+  const cfg = JSON.parse(root.dataset.config);
+  const guestTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  let viewMonth = startOfMonth(new Date());
+  let selectedDate = null;
+  let selectedSlot = null;
+
+  // ---- helpers ----
+  function startOfMonth(d) { const x = new Date(d); x.setDate(1); x.setHours(0,0,0,0); return x; }
+  function addMonths(d, n) { const x = new Date(d); x.setMonth(x.getMonth() + n); return x; }
+  function fmtDay(d) { return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }); }
+  function fmtTime(iso) { return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); }
+  function fmtFull(iso) {
+    return new Date(iso).toLocaleString(undefined, {
+      weekday: 'long', month: 'long', day: 'numeric',
+      hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+    });
+  }
+  function ymd(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  function showStep(name) {
+    root.querySelectorAll('.step').forEach((el) => el.classList.toggle('active', el.dataset.step === name));
+  }
+
+  // ---- step 1: calendar ----
+  function renderCalendar() {
+    const cal = document.getElementById('calendar');
+    const label = document.getElementById('month-label');
+    label.textContent = viewMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+
+    cal.innerHTML = '';
+    ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach((d) => {
+      const el = document.createElement('div');
+      el.className = 'day-label';
+      el.textContent = d;
+      cal.appendChild(el);
+    });
+
+    const firstDay = startOfMonth(viewMonth);
+    const offset = firstDay.getDay();
+    for (let i = 0; i < offset; i++) {
+      cal.appendChild(document.createElement('div'));
+    }
+
+    const today = new Date(); today.setHours(0,0,0,0);
+    const maxDate = new Date(today); maxDate.setDate(maxDate.getDate() + cfg.bookingWindowDays);
+
+    const month = viewMonth.getMonth();
+    const cursor = new Date(firstDay);
+    while (cursor.getMonth() === month) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'day';
+      btn.textContent = cursor.getDate();
+
+      const isPast = cursor < today;
+      const isFuture = cursor > maxDate;
+      const isOffDay = !cfg.availabilityDays.includes(cursor.getDay());
+      if (isPast || isFuture || isOffDay) {
+        btn.classList.add('disabled');
+      } else {
+        const dateStr = ymd(cursor);
+        btn.addEventListener('click', () => selectDate(dateStr));
+      }
+      cal.appendChild(btn);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  }
+
+  document.getElementById('prev-month').addEventListener('click', () => {
+    const candidate = addMonths(viewMonth, -1);
+    const today = startOfMonth(new Date());
+    if (candidate < today) return;
+    viewMonth = candidate;
+    renderCalendar();
+  });
+  document.getElementById('next-month').addEventListener('click', () => {
+    viewMonth = addMonths(viewMonth, 1);
+    renderCalendar();
+  });
+
+  // ---- step 2: slots ----
+  async function selectDate(dateStr) {
+    selectedDate = dateStr;
+    document.getElementById('slot-date-label').textContent = new Date(dateStr + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+    showStep('slot');
+
+    const slotsEl = document.getElementById('slots');
+    const status = document.getElementById('slot-status');
+    slotsEl.innerHTML = '';
+    status.textContent = 'Loading…';
+    status.style.display = '';
+
+    try {
+      const url = `/api/availability?type=${encodeURIComponent(cfg.slug)}&date=${dateStr}&tz=${encodeURIComponent(guestTz)}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const { slots } = await res.json();
+
+      if (!slots || slots.length === 0) {
+        status.textContent = 'No times available on this date.';
+        return;
+      }
+      status.style.display = 'none';
+
+      slots.forEach((iso) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = fmtTime(iso);
+        btn.addEventListener('click', () => selectSlot(iso));
+        slotsEl.appendChild(btn);
+      });
+    } catch (err) {
+      status.textContent = `Could not load times. ${err.message}`;
+    }
+  }
+
+  // ---- step 3: form ----
+  function selectSlot(iso) {
+    selectedSlot = iso;
+    document.getElementById('form-slot-label').textContent = fmtFull(iso);
+
+    const qWrap = document.getElementById('custom-questions');
+    qWrap.innerHTML = '';
+    cfg.questions.forEach((q) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'field';
+      const label = document.createElement('label');
+      label.textContent = q.label + (q.required ? '' : ' (optional)');
+      label.htmlFor = `q_${q.id}`;
+      const ta = document.createElement('textarea');
+      ta.id = `q_${q.id}`;
+      ta.name = q.id;
+      ta.rows = 3;
+      if (q.required) ta.required = true;
+      wrap.appendChild(label);
+      wrap.appendChild(ta);
+      qWrap.appendChild(wrap);
+    });
+
+    showStep('form');
+  }
+
+  document.getElementById('booking-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('submit-btn');
+    const errEl = document.getElementById('form-error');
+    errEl.style.display = 'none';
+    btn.disabled = true;
+    btn.textContent = 'Booking…';
+
+    const fd = new FormData(e.target);
+    const answers = {};
+    cfg.questions.forEach((q) => { answers[q.id] = (fd.get(q.id) ?? '').toString().trim(); });
+
+    const body = {
+      type: cfg.slug,
+      slot: selectedSlot,
+      name: fd.get('name').toString().trim(),
+      email: fd.get('email').toString().trim(),
+      timezone: guestTz,
+      answers,
+    };
+
+    try {
+      const res = await fetch('/api/book', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.status === 409) {
+        errEl.textContent = 'That time was just taken. Please pick another.';
+        errEl.style.display = 'block';
+        btn.disabled = false; btn.textContent = 'Confirm booking';
+        // Re-fetch slots for the same date.
+        selectDate(selectedDate);
+        return;
+      }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `status ${res.status}`);
+      }
+      const data = await res.json();
+      showConfirmation(body.slot, body.name, data);
+    } catch (err) {
+      errEl.textContent = `Something went wrong: ${err.message}`;
+      errEl.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Confirm booking';
+    }
+  });
+
+  // ---- step 4: confirmation ----
+  function showConfirmation(slotIso, name, _data) {
+    document.getElementById('confirm-msg').textContent =
+      `${cfg.name} with ${cfg.ownerName} on ${fmtFull(slotIso)}.`;
+
+    // Google Calendar quick-add URL
+    const start = new Date(slotIso);
+    const end = new Date(start.getTime() + cfg.duration * 60_000);
+    const fmtGcal = (d) => d.toISOString().replace(/[-:]|\.\d{3}/g, '');
+    const url = new URL('https://calendar.google.com/calendar/render');
+    url.searchParams.set('action', 'TEMPLATE');
+    url.searchParams.set('text', `${cfg.name} with ${cfg.ownerName}`);
+    url.searchParams.set('dates', `${fmtGcal(start)}/${fmtGcal(end)}`);
+    document.getElementById('gcal-add').href = url.toString();
+
+    showStep('done');
+  }
+
+  // ---- back buttons ----
+  root.querySelectorAll('[data-back]').forEach((b) => {
+    b.addEventListener('click', () => showStep(b.dataset.back));
+  });
+
+  renderCalendar();
+</script>

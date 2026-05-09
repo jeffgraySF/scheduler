@@ -1,0 +1,23 @@
+{
+  "name": "scheduler",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Self-hosted scheduling tool — Astro + Netlify Functions + Google Calendar",
+  "scripts": {
+    "dev": "netlify dev",
+    "dev:astro": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "get-token": "node scripts/get-token.js"
+  },
+  "dependencies": {
+    "date-fns-tz": "^3.2.0",
+    "googleapis": "^144.0.0",
+    "resend": "^4.0.1"
+  },
+  "devDependencies": {
+    "astro": "^5.0.0",
+    "dotenv": "^16.4.5"
+  }
+}

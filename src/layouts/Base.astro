@@ -1,0 +1,30 @@
+---
+import { config } from '../lib/config.js';
+import '../styles/base.css';
+
+const themeImports = {
+  minimal: () => import('../styles/themes/minimal.css?url'),
+  warm:    () => import('../styles/themes/warm.css?url'),
+  dark:    () => import('../styles/themes/dark.css?url'),
+};
+
+const themeLoader = themeImports[config.theme] ?? themeImports.minimal;
+const themeUrl = (await themeLoader()).default;
+
+const { title } = Astro.props;
+const pageTitle = title ? `${title} — ${config.owner.name}` : `Schedule with ${config.owner.name}`;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <link rel="stylesheet" href={themeUrl} />
+  </head>
+  <body>
+    <main class="container">
+      <slot />
+    </main>
+  </body>
+</html>

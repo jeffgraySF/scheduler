@@ -1,0 +1,13 @@
+---
+import Base from '../layouts/Base.astro';
+import MeetingCard from '../components/MeetingCard.astro';
+import { config } from '../lib/config.js';
+---
+<Base>
+  <h1>Schedule with {config.owner.name}</h1>
+  <p class="muted">Pick a meeting type to see available times.</p>
+
+  <div class="stack" style="margin-top: 2rem;">
+    {config.meetingTypes.map((mt) => <MeetingCard meetingType={mt} />)}
+  </div>
+</Base>

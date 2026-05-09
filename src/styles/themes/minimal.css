@@ -1,0 +1,15 @@
+:root {
+  --color-bg:          #ffffff;
+  --color-surface:     #fafafa;
+  --color-border:      #e5e5e5;
+  --color-primary:     #111111;
+  --color-primary-fg:  #ffffff;
+  --color-text:        #111111;
+  --color-text-muted:  #666666;
+  --color-success:     #16a34a;
+  --color-error:       #dc2626;
+
+  --radius:            6px;
+  --font-family:       'Inter', system-ui, -apple-system, sans-serif;
+  --font-size-base:    16px;
+}

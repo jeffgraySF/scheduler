@@ -1,5 +1,23 @@
-.env
-config.js
-.netlify/
-dist/
+# dependencies
 node_modules/
+
+# build output
+dist/
+.astro/
+
+# netlify
+.netlify/
+
+# environment + config (never commit)
+.env
+.env.local
+/config.js
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# logs
+npm-debug.log*
+*.log

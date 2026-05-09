@@ -23,7 +23,7 @@ const oauth2 = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, RE
 const authUrl = oauth2.generateAuthUrl({
   access_type: 'offline',
   prompt: 'consent',
-  scope: ['https://www.googleapis.com/auth/calendar.events'],
+  scope: ['https://www.googleapis.com/auth/calendar'],
 });
 
 console.log('\nOpening Google OAuth in your browser...');
@@ -40,8 +40,8 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const { tokens } = await oauth2.getToken(code);
-    res.writeHead(200, { 'content-type': 'text/html' });
-    res.end('<h2>All set — you can close this tab.</h2>');
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    res.end('<!doctype html><meta charset="utf-8"><h2>All set — you can close this tab.</h2>');
 
     if (!tokens.refresh_token) {
       console.error('\nNo refresh_token returned. This usually means you have already');

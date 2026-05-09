@@ -3,7 +3,7 @@
 
 import { config, getMeetingType } from '../../src/lib/config.js';
 import { generateCandidateSlots, intervalsOverlap } from '../../src/lib/slots.js';
-import { getCalendarClient, CALENDAR_ID } from './_lib/google.js';
+import { getCalendarClient, CALENDAR_ID, getConflictCalendarIds, aggregateBusy } from './_lib/google.js';
 
 export default async (request) => {
   const url = new URL(request.url);
@@ -49,14 +49,15 @@ export default async (request) => {
   let busy = [];
   try {
     const calendar = getCalendarClient();
+    const calendarIds = await getConflictCalendarIds(calendar);
     const fb = await calendar.freebusy.query({
       requestBody: {
         timeMin: dayStartUtc.toISOString(),
         timeMax: dayEndUtc.toISOString(),
-        items: [{ id: CALENDAR_ID }],
+        items: calendarIds.map((id) => ({ id })),
       },
     });
-    busy = fb.data.calendars?.[CALENDAR_ID]?.busy ?? [];
+    busy = aggregateBusy(fb.data);
   } catch (err) {
     console.error('freebusy query failed', err);
     return json({ error: 'Calendar lookup failed' }, 500);

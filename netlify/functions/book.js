@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto';
 import { Resend } from 'resend';
 import { config, getMeetingType } from '../../src/lib/config.js';
 import { intervalsOverlap } from '../../src/lib/slots.js';
-import { getCalendarClient, CALENDAR_ID } from './_lib/google.js';
+import { getCalendarClient, CALENDAR_ID, getConflictCalendarIds, aggregateBusy } from './_lib/google.js';
 
 const BOOKING_PROP_KEY = 'schedulerBookingId';
 
@@ -51,19 +51,22 @@ export default async (request) => {
     return json({ error: 'Server misconfigured' }, 500);
   }
 
-  // Pre-check: is the slot already taken?
+  // Pre-check: is the slot already taken? Check all calendars the owner
+  // has visible in their GCal UI (work, kids' sports, etc.) — not just
+  // the booking calendar.
   const buffer = config.availability.bufferMinutes * 60_000;
   const checkStart = new Date(start.getTime() - buffer).toISOString();
   const checkEnd = new Date(end.getTime() + buffer).toISOString();
   try {
+    const calendarIds = await getConflictCalendarIds(calendar);
     const fb = await calendar.freebusy.query({
       requestBody: {
         timeMin: checkStart,
         timeMax: checkEnd,
-        items: [{ id: CALENDAR_ID }],
+        items: calendarIds.map((id) => ({ id })),
       },
     });
-    const busy = fb.data.calendars?.[CALENDAR_ID]?.busy ?? [];
+    const busy = aggregateBusy(fb.data);
     const conflict = busy.some((b) => intervalsOverlap(start, end, b.start, b.end));
     if (conflict) return json({ error: 'Slot no longer available' }, 409);
   } catch (err) {

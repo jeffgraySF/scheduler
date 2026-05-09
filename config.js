@@ -11,35 +11,34 @@
 // SCHEDULER_OWNER_TIMEZONE.
 
 export default {
-  theme: 'minimal',                  // override: SCHEDULER_THEME
+  theme: 'warm',                  // override: SCHEDULER_THEME
   language: 'en',                    // override: SCHEDULER_LANGUAGE (reserved — no i18n yet)
   bookingWindowDays: 30,             // override: SCHEDULER_BOOKING_WINDOW_DAYS
 
   availability: {                    // override: SCHEDULER_AVAILABILITY (JSON)
     days: [1, 2, 3, 4, 5],           // 0 = Sunday, 6 = Saturday
-    startHour: 9,
+    startHour: 8,
     endHour: 17,
-    bufferMinutes: 15,
+    bufferMinutes: 0,
   },
 
   meetingTypes: [                    // override: SCHEDULER_MEETING_TYPES (JSON)
     {
-      slug: 'intro',
-      name: 'Intro Call',
+      slug: 'thirty',
+      name: '30 minutes',
       duration: 30,
-      description: 'A quick chat to get acquainted.',
+      description: 'A thirty-minute call',
       questions: [
         { id: 'context', label: 'What would you like to discuss?', required: true },
       ],
     },
     {
-      slug: 'strategy',
-      name: 'Strategy Session',
+      slug: 'sixty',
+      name: '60 minutes',
       duration: 60,
-      description: 'Deep dive on your business or product challenges.',
+      description: 'A sixty-minute call',
       questions: [
-        { id: 'company', label: 'Tell me about your company or project.', required: true },
-        { id: 'goals', label: 'What are you hoping to achieve?', required: false },
+        { id: 'context', label: 'What would you like to discuss?', required: true },
       ],
     },
   ],

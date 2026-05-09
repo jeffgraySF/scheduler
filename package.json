@@ -3,7 +3,26 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Self-hosted scheduling tool — Astro + Netlify Functions + Google Calendar",
+  "description": "Self-hosted, open-source scheduling tool. Astro + Netlify Functions + Google Calendar.",
+  "license": "MIT",
+  "author": "Jeff Gray",
+  "homepage": "https://github.com/jeffgraySF/scheduler",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jeffgraySF/scheduler.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jeffgraySF/scheduler/issues"
+  },
+  "keywords": [
+    "scheduling",
+    "calendar",
+    "calendly",
+    "google-calendar",
+    "astro",
+    "netlify",
+    "self-hosted"
+  ],
   "scripts": {
     "dev": "netlify dev",
     "dev:astro": "astro dev",

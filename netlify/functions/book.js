@@ -171,10 +171,11 @@ async function sendEmails({ name, email, timezone, slot, meetingType }) {
     hour: 'numeric', minute: '2-digit', timeZone: config.owner.timezone, timeZoneName: 'short',
   });
 
-  // Guest confirmation
+  // Guest confirmation — replies go to the owner's real inbox
   await resend.emails.send({
     from,
     to: email,
+    replyTo: config.owner.email,
     subject: `Your ${meetingType.name} with ${config.owner.name} is confirmed`,
     html: `
       <p>Hi ${escapeHtml(name)},</p>
@@ -184,10 +185,11 @@ async function sendEmails({ name, email, timezone, slot, meetingType }) {
     `,
   });
 
-  // Owner notification
+  // Owner notification — replies go directly to the guest
   await resend.emails.send({
     from,
     to: config.owner.email,
+    replyTo: email,
     subject: `New booking: ${meetingType.name} with ${name}`,
     html: `
       <p>New ${escapeHtml(meetingType.name)} booking.</p>

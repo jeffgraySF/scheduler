@@ -3,7 +3,8 @@
 
 import { config, getMeetingType } from '../../src/lib/config.js';
 import { generateCandidateSlots, intervalsOverlap } from '../../src/lib/slots.js';
-import { getCalendarClient, CALENDAR_ID, getConflictCalendarIds, aggregateBusy } from './_lib/google.js';
+import { getCalendarClient, getBusyWindows } from './_lib/google.js';
+import { json } from './_lib/http.js';
 
 export default async (request) => {
   const url = new URL(request.url);
@@ -22,7 +23,6 @@ export default async (request) => {
     return json({ error: 'date must be YYYY-MM-DD' }, 400);
   }
 
-  // Reject dates outside the booking window.
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const requested = new Date(`${date}T00:00:00`);
@@ -42,22 +42,12 @@ export default async (request) => {
     return json({ slots: [], timezone: config.owner.timezone });
   }
 
-  // Query GCal freebusy for the day window.
-  const dayStartUtc = new Date(candidates[0]);
-  const dayEndUtc = new Date(new Date(candidates.at(-1)).getTime() + meetingType.duration * 60_000);
+  const timeMin = candidates[0];
+  const timeMax = new Date(Date.parse(candidates.at(-1)) + meetingType.duration * 60_000).toISOString();
 
-  let busy = [];
+  let busy;
   try {
-    const calendar = getCalendarClient();
-    const calendarIds = await getConflictCalendarIds(calendar);
-    const fb = await calendar.freebusy.query({
-      requestBody: {
-        timeMin: dayStartUtc.toISOString(),
-        timeMax: dayEndUtc.toISOString(),
-        items: calendarIds.map((id) => ({ id })),
-      },
-    });
-    busy = aggregateBusy(fb.data);
+    busy = await getBusyWindows(getCalendarClient(), timeMin, timeMax);
   } catch (err) {
     console.error('freebusy query failed', err);
     return json({ error: 'Calendar lookup failed' }, 500);
@@ -65,17 +55,10 @@ export default async (request) => {
 
   const buffer = config.availability.bufferMinutes * 60_000;
   const open = candidates.filter((iso) => {
-    const start = new Date(iso).getTime() - buffer;
-    const end = new Date(iso).getTime() + meetingType.duration * 60_000 + buffer;
+    const start = Date.parse(iso) - buffer;
+    const end = Date.parse(iso) + meetingType.duration * 60_000 + buffer;
     return !busy.some((b) => intervalsOverlap(start, end, b.start, b.end));
   });
 
   return json({ slots: open, timezone: config.owner.timezone });
 };
-
-function json(body, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
-}

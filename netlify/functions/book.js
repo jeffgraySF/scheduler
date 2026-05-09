@@ -11,7 +11,8 @@ import { randomUUID } from 'node:crypto';
 import { Resend } from 'resend';
 import { config, getMeetingType } from '../../src/lib/config.js';
 import { intervalsOverlap } from '../../src/lib/slots.js';
-import { getCalendarClient, CALENDAR_ID, getConflictCalendarIds, aggregateBusy } from './_lib/google.js';
+import { getCalendarClient, CALENDAR_ID, getBusyWindows } from './_lib/google.js';
+import { json } from './_lib/http.js';
 
 const BOOKING_PROP_KEY = 'schedulerBookingId';
 
@@ -33,7 +34,6 @@ export default async (request) => {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     return json({ error: 'Invalid email' }, 400);
   }
-  // Required custom-question answers
   for (const q of meetingType.questions ?? []) {
     if (q.required && !(answers?.[q.id] ?? '').trim()) {
       return json({ error: `Answer required: ${q.label}` }, 400);
@@ -51,30 +51,21 @@ export default async (request) => {
     return json({ error: 'Server misconfigured' }, 500);
   }
 
-  // Pre-check: is the slot already taken? Check all calendars the owner
-  // has visible in their GCal UI (work, kids' sports, etc.) — not just
-  // the booking calendar.
+  // Pre-check across all calendars (work, kids' sports, etc.) — catches the
+  // common case where a busy event landed between page load and submit.
   const buffer = config.availability.bufferMinutes * 60_000;
   const checkStart = new Date(start.getTime() - buffer).toISOString();
   const checkEnd = new Date(end.getTime() + buffer).toISOString();
   try {
-    const calendarIds = await getConflictCalendarIds(calendar);
-    const fb = await calendar.freebusy.query({
-      requestBody: {
-        timeMin: checkStart,
-        timeMax: checkEnd,
-        items: calendarIds.map((id) => ({ id })),
-      },
-    });
-    const busy = aggregateBusy(fb.data);
-    const conflict = busy.some((b) => intervalsOverlap(start, end, b.start, b.end));
-    if (conflict) return json({ error: 'Slot no longer available' }, 409);
+    const busy = await getBusyWindows(calendar, checkStart, checkEnd);
+    if (busy.some((b) => intervalsOverlap(start, end, b.start, b.end))) {
+      return json({ error: 'Slot no longer available' }, 409);
+    }
   } catch (err) {
     console.error('Pre-insert freebusy failed', err);
     return json({ error: 'Calendar lookup failed' }, 500);
   }
 
-  // Insert the event tagged with a unique booking id.
   const bookingId = randomUUID();
   const description = buildDescription({ name, email, timezone, answers, meetingType });
   let inserted;
@@ -109,38 +100,35 @@ export default async (request) => {
     return json({ error: 'Could not create calendar event' }, 500);
   }
 
-  // Post-insert reconciliation: did anyone else slip in?
+  // GCal's privateExtendedProperty filter requires an exact value match — no
+  // wildcards — so we list all events in the slot window and filter for our
+  // tag in memory. (Earlier `<key>=*` form silently returned zero matches.)
   try {
     const list = await calendar.events.list({
       calendarId: CALENDAR_ID,
       timeMin: checkStart,
       timeMax: checkEnd,
       singleEvents: true,
-      privateExtendedProperty: `${BOOKING_PROP_KEY}=*`, // any value
     });
-    const ours = inserted;
     const overlapping = (list.data.items ?? []).filter((ev) => {
+      if (!ev.extendedProperties?.private?.[BOOKING_PROP_KEY]) return false;
       if (!ev.start?.dateTime || !ev.end?.dateTime) return false;
       return intervalsOverlap(start, end, ev.start.dateTime, ev.end.dateTime);
     });
     if (overlapping.length > 1) {
-      const sorted = overlapping
-        .map((ev) => ({ ev, created: new Date(ev.created).getTime() }))
-        .sort((a, b) => a.created - b.created);
-      const winner = sorted[0].ev;
-      if (winner.id !== ours.id) {
-        // We lost — delete ourselves and return 409.
-        await calendar.events.delete({ calendarId: CALENDAR_ID, eventId: ours.id, sendUpdates: 'none' }).catch((e) => console.error('Self-delete failed', e));
+      const winner = overlapping
+        .map((ev) => ({ ev, created: Date.parse(ev.created) }))
+        .sort((a, b) => a.created - b.created)[0].ev;
+      if (winner.id !== inserted.id) {
+        await calendar.events.delete({ calendarId: CALENDAR_ID, eventId: inserted.id, sendUpdates: 'none' })
+          .catch((e) => console.error('Self-delete failed', e));
         return json({ error: 'Slot no longer available' }, 409);
       }
     }
   } catch (err) {
-    // Reconciliation failure isn't fatal — log and proceed. The pre-check
-    // already filtered most collisions; this is a best-effort second line.
     console.error('Reconciliation list failed (proceeding)', err);
   }
 
-  // Send emails (don't block response on failures — log and continue).
   await sendEmails({ name, email, timezone, slot, meetingType }).catch((e) => {
     console.error('Email send failed', e);
   });
@@ -163,6 +151,13 @@ function buildDescription({ name, email, timezone, answers, meetingType }) {
   return lines.join('\n');
 }
 
+function formatInZone(slot, timezone) {
+  return new Date(slot).toLocaleString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric',
+    hour: 'numeric', minute: '2-digit', timeZone: timezone, timeZoneName: 'short',
+  });
+}
+
 async function sendEmails({ name, email, timezone, slot, meetingType }) {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM || 'onboarding@resend.dev';
@@ -171,56 +166,41 @@ async function sendEmails({ name, email, timezone, slot, meetingType }) {
     return;
   }
   const resend = new Resend(apiKey);
+  const guestTime = formatInZone(slot, timezone);
+  const ownerTime = formatInZone(slot, config.owner.timezone);
 
-  const guestTime = new Date(slot).toLocaleString('en-US', {
-    weekday: 'long', month: 'long', day: 'numeric',
-    hour: 'numeric', minute: '2-digit', timeZone: timezone, timeZoneName: 'short',
-  });
-  const ownerTime = new Date(slot).toLocaleString('en-US', {
-    weekday: 'long', month: 'long', day: 'numeric',
-    hour: 'numeric', minute: '2-digit', timeZone: config.owner.timezone, timeZoneName: 'short',
-  });
-
-  // Guest confirmation — replies go to the owner's real inbox
-  await resend.emails.send({
-    from,
-    to: email,
-    replyTo: config.owner.email,
-    subject: `Your ${meetingType.name} with ${config.owner.name} is confirmed`,
-    html: `
-      <p>Hi ${escapeHtml(name)},</p>
-      <p>Your ${escapeHtml(meetingType.name)} with ${escapeHtml(config.owner.name)} is confirmed for <strong>${escapeHtml(guestTime)}</strong>.</p>
-      <p>You'll receive a Google Calendar invite shortly. Reply to this email if anything changes.</p>
-      <p>— ${escapeHtml(config.owner.name)}</p>
-    `,
-  });
-
-  // Owner notification — replies go directly to the guest
-  await resend.emails.send({
-    from,
-    to: config.owner.email,
-    replyTo: email,
-    subject: `New booking: ${meetingType.name} with ${name}`,
-    html: `
-      <p>New ${escapeHtml(meetingType.name)} booking.</p>
-      <ul>
-        <li><strong>${escapeHtml(name)}</strong> &lt;${escapeHtml(email)}&gt;</li>
-        <li>Time (your tz): ${escapeHtml(ownerTime)}</li>
-        <li>Time (guest tz): ${escapeHtml(guestTime)}</li>
-      </ul>
-    `,
-  });
+  await Promise.all([
+    resend.emails.send({
+      from,
+      to: email,
+      replyTo: config.owner.email,
+      subject: `Your ${meetingType.name} with ${config.owner.name} is confirmed`,
+      html: `
+        <p>Hi ${escapeHtml(name)},</p>
+        <p>Your ${escapeHtml(meetingType.name)} with ${escapeHtml(config.owner.name)} is confirmed for <strong>${escapeHtml(guestTime)}</strong>.</p>
+        <p>You'll receive a Google Calendar invite shortly. Reply to this email if anything changes.</p>
+        <p>— ${escapeHtml(config.owner.name)}</p>
+      `,
+    }),
+    resend.emails.send({
+      from,
+      to: config.owner.email,
+      replyTo: email,
+      subject: `New booking: ${meetingType.name} with ${name}`,
+      html: `
+        <p>New ${escapeHtml(meetingType.name)} booking.</p>
+        <ul>
+          <li><strong>${escapeHtml(name)}</strong> &lt;${escapeHtml(email)}&gt;</li>
+          <li>Time (your tz): ${escapeHtml(ownerTime)}</li>
+          <li>Time (guest tz): ${escapeHtml(guestTime)}</li>
+        </ul>
+      `,
+    }),
+  ]);
 }
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[c]));
-}
-
-function json(body, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
 }

@@ -22,11 +22,12 @@ export function getCalendarClient() {
 // Calendar to write bookings to.
 export const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID || 'primary';
 
-// Calendar IDs to check for free/busy conflicts. Defaults to every calendar
-// the user has currently "shown" in their GCal UI (`selected: true`) — same
-// behavior as Calendly. Hidden, default-unselected, and holiday-style
-// calendars are skipped. Always includes the booking calendar itself.
-export async function getConflictCalendarIds(calendar) {
+// Calendar IDs are stable across requests; we cache them on the warm Lambda
+// to avoid an extra calendarList.list() per availability/book call.
+const CALENDAR_IDS_TTL_MS = 10 * 60_000;
+let calendarIdsCache = null; // { ids, expires }
+
+async function fetchConflictCalendarIds(calendar) {
   const { data } = await calendar.calendarList.list({ minAccessRole: 'reader' });
   const ids = (data.items ?? [])
     .filter((c) => !c.hidden && c.selected === true)
@@ -35,7 +36,23 @@ export async function getConflictCalendarIds(calendar) {
   return ids;
 }
 
-// Aggregate busy windows from a freebusy.query response across all calendars.
-export function aggregateBusy(freebusyData) {
-  return Object.values(freebusyData?.calendars ?? {}).flatMap((c) => c.busy ?? []);
+// Returns every calendar the user has currently "shown" in their GCal UI
+// (`selected: true`) — Calendly-equivalent. Hidden and default-off
+// calendars are skipped. The booking calendar is always included.
+export async function getConflictCalendarIds(calendar) {
+  const now = Date.now();
+  if (calendarIdsCache && calendarIdsCache.expires > now) return calendarIdsCache.ids;
+  const ids = await fetchConflictCalendarIds(calendar);
+  calendarIdsCache = { ids, expires: now + CALENDAR_IDS_TTL_MS };
+  return ids;
+}
+
+// Returns all busy windows in [timeMin, timeMax] across every conflict-checked
+// calendar. timeMin/timeMax are ISO strings.
+export async function getBusyWindows(calendar, timeMin, timeMax) {
+  const ids = await getConflictCalendarIds(calendar);
+  const { data } = await calendar.freebusy.query({
+    requestBody: { timeMin, timeMax, items: ids.map((id) => ({ id })) },
+  });
+  return Object.values(data?.calendars ?? {}).flatMap((c) => c.busy ?? []);
 }

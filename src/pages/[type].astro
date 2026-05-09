@@ -282,8 +282,8 @@ const clientData = {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || `status ${res.status}`);
       }
-      const data = await res.json();
-      showConfirmation(body.slot, body.name, data);
+      await res.json();
+      showConfirmation(body.slot, body.name);
     } catch (err) {
       errEl.textContent = `Something went wrong: ${err.message}`;
       errEl.style.display = 'block';
@@ -292,7 +292,7 @@ const clientData = {
   });
 
   // ---- step 4: confirmation ----
-  function showConfirmation(slotIso, name, _data) {
+  function showConfirmation(slotIso, name) {
     document.getElementById('confirm-msg').textContent =
       `${cfg.name} with ${cfg.ownerName} on ${fmtFull(slotIso)}.`;
 

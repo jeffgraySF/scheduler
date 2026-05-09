@@ -158,6 +158,16 @@ create a busy event on your Google Calendar covering those dates. The
 availability endpoint queries freebusy in real time, so blocked times
 disappear from the booking grid automatically.
 
+**Which calendars count as busy:** every calendar you have currently
+*shown* in your Gmail/Google Calendar left sidebar (`selected: true` in
+Google's API). Work Gmail, school schedules, family calendars, kids'
+sports — anything visible in your UI blocks the matching time. Hide a
+calendar in Gmail to stop it from blocking; show it to start. No code
+or config change required.
+
+The booking event itself is always written to the calendar identified
+by `GOOGLE_CALENDAR_ID` (defaults to `primary`).
+
 ### Per-deployment overrides without editing code
 
 Every field in `/config.js` can also be overridden via an env var. Useful
@@ -178,12 +188,24 @@ configuration → Environment variables, then trigger a redeploy.
 
 - **No database.** Google Calendar is the source of truth for both
   availability and bookings.
+- **Multi-calendar conflict checking.** The freebusy query runs across
+  every calendar the owner has shown in their Google Calendar UI
+  (`selected: true`), aggregated into a single busy set. The booking
+  event is written to the calendar identified by `GOOGLE_CALENDAR_ID`.
+- **Auto-generated Google Meet links.** Every booked event includes a
+  Meet link (via `conferenceData.createRequest` on the GCal insert),
+  visible in the calendar invite both parties receive.
 - **Race protection** is best-effort: the booking endpoint pre-checks
   freebusy, then post-insert reconciles by listing events tagged with a
   unique booking ID. If two bookings collide, the earliest `created`
   timestamp wins; the loser self-deletes and returns 409. Not bulletproof
   (GCal list-after-write has tiny replication lag), but plenty for personal
   traffic volume.
+- **Reply-To pattern.** The branded sender (`RESEND_FROM`) is used as
+  the `From:` for confirmation/notification emails, but `Reply-To:` is
+  set to the other party — the guest's confirmation replies go to the
+  owner's inbox, and the owner's notification replies go straight to the
+  guest. Same pattern Calendly uses.
 - **Static frontend.** Astro builds to plain HTML/CSS/JS — no SSR, no React.
   The booking flow uses a single page with vanilla-JS step state.
 

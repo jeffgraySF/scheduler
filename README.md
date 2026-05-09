@@ -37,19 +37,30 @@ npm install
 cp .env.example .env
 ```
 
-Two layers of configuration:
+Open `.env` and fill in the three required owner fields right now:
 
-- **`/config.js`** (committed) holds the structural defaults: theme,
-  availability, booking window, meeting types. Edit it to customize the
-  shape of your deployment.
-- **`.env`** (gitignored, local only) and your Netlify env hold per-deployment
-  values: owner identity (required) and any optional overrides. Anything in
-  env wins over `/config.js`.
+```
+SCHEDULER_OWNER_NAME=Your Name
+SCHEDULER_OWNER_EMAIL=you@example.com
+SCHEDULER_OWNER_TIMEZONE=America/New_York
+```
 
-Required env vars: `SCHEDULER_OWNER_NAME`, `SCHEDULER_OWNER_EMAIL`,
-`SCHEDULER_OWNER_TIMEZONE`. See `.env.example` for the full list including
-optional overrides like `SCHEDULER_THEME` and `SCHEDULER_MEETING_TYPES`
-(JSON).
+You'll add Google and Resend credentials in the next two steps; leave those
+blank for now.
+
+**How configuration is structured:**
+
+- **`/config.js`** (committed) holds the *shape* of your deployment: theme,
+  availability hours, booking window, meeting types. Edit this file when
+  you want to change how the app behaves for everyone using your fork.
+- **Environment variables** (in `.env` locally, in Netlify in production)
+  hold per-deployment values. Owner identity above is required; optional
+  overrides like `SCHEDULER_THEME` and `SCHEDULER_MEETING_TYPES` (JSON)
+  let you change behavior without editing code.
+
+Anything in env wins over `/config.js`. See `.env.example` for the full
+list of optional overrides and the [Customization](#customization) section
+below for examples.
 
 ### 3. Google Calendar OAuth
 
@@ -94,41 +105,74 @@ After this, every `git push` triggers a fresh deploy automatically.
 
 ## Customization
 
-The pattern: edit `/config.js` for things you want everyone (incl. open-source
-forks) to inherit; set env vars for per-deployment overrides.
+For most changes: **edit `/config.js`, commit, push.** Netlify auto-deploys
+on push, so the change is live in a minute or two.
 
-### Meeting types
+### Change the theme
 
-Edit `meetingTypes` in `/config.js`. Each entry needs:
+Open `/config.js` and change the `theme` value:
 
-- `slug` — URL path (`/intro`)
-- `name` — display name
+```js
+theme: 'minimal',  // change to 'warm' or 'dark'
+```
+
+Save, commit, push. Done.
+
+Built-in themes: `minimal` (clean, monochrome), `warm` (earthy), `dark`.
+
+To create a new theme, copy `src/styles/themes/minimal.css` to a new file
+(e.g. `ocean.css`), edit the colors, then set `theme: 'ocean'` in
+`/config.js`.
+
+### Add or edit a meeting type
+
+Edit the `meetingTypes` array in `/config.js`. Each entry has:
+
+- `slug` — URL path (e.g. `slug: 'coffee'` lives at `/coffee`)
+- `name` — display name on the home page card
 - `duration` — minutes
-- `description` — shown on the home page
-- `questions` — array of `{ id, label, required }` shown on the booking form
+- `description` — shown on the home page card
+- `questions` — array of follow-up questions on the booking form, each
+  `{ id, label, required }`
 
-To override per-deployment without touching code, set
-`SCHEDULER_MEETING_TYPES` to a JSON array.
+Add a new object to the array, save, commit, push. The new meeting type
+appears on the home page automatically.
 
-### Themes
-
-Drop a CSS file into `src/styles/themes/` defining the standard CSS custom
-properties (see `minimal.css` for the full list), then change `theme` in
-`/config.js` (or set `SCHEDULER_THEME`) to the filename (without `.css`).
-Built-in: `minimal`, `warm`, `dark`.
-
-### Availability
+### Adjust availability hours
 
 Edit `availability` in `/config.js`:
 
-- `days` — array of weekday numbers (0 = Sunday)
-- `startHour` / `endHour` — in owner's timezone
-- `bufferMinutes` — gap between meetings
+```js
+availability: {
+  days: [1, 2, 3, 4, 5],   // 0 = Sunday, 6 = Saturday
+  startHour: 9,             // first slot starts at 9am
+  endHour: 17,              // last slot ends by 5pm
+  bufferMinutes: 15,        // gap between back-to-back meetings
+},
+```
 
-To block specific dates (vacation, etc.), just create a busy event on your
-Google Calendar — the freebusy check will skip those times automatically.
+All times are in your timezone (the `SCHEDULER_OWNER_TIMEZONE` env var).
 
-For per-deployment overrides, set `SCHEDULER_AVAILABILITY` to a JSON object.
+**To block specific dates (vacation, holidays):** don't edit config — just
+create a busy event on your Google Calendar covering those dates. The
+availability endpoint queries freebusy in real time, so blocked times
+disappear from the booking grid automatically.
+
+### Per-deployment overrides without editing code
+
+Every field in `/config.js` can also be overridden via an env var. Useful
+if you fork the project and want a different theme/schedule/meeting types
+without maintaining a code diff:
+
+| Field | Env var | Format |
+|---|---|---|
+| `theme` | `SCHEDULER_THEME` | string |
+| `bookingWindowDays` | `SCHEDULER_BOOKING_WINDOW_DAYS` | number |
+| `availability` | `SCHEDULER_AVAILABILITY` | JSON object |
+| `meetingTypes` | `SCHEDULER_MEETING_TYPES` | JSON array |
+
+Env values win over `/config.js`. Set them in Netlify Dashboard → Site
+configuration → Environment variables, then trigger a redeploy.
 
 ## Architecture notes
 

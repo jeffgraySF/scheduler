@@ -79,6 +79,7 @@ export default async (request) => {
     const res = await calendar.events.insert({
       calendarId: CALENDAR_ID,
       sendUpdates: 'all',
+      conferenceDataVersion: 1,
       requestBody: {
         summary: `${meetingType.name} with ${name}`,
         description,
@@ -88,6 +89,12 @@ export default async (request) => {
           { email: config.owner.email, organizer: true },
           { email, displayName: name },
         ],
+        conferenceData: {
+          createRequest: {
+            requestId: bookingId,
+            conferenceSolutionKey: { type: 'hangoutsMeet' },
+          },
+        },
         extendedProperties: {
           private: { [BOOKING_PROP_KEY]: bookingId },
         },

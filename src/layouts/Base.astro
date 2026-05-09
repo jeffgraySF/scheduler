@@ -8,8 +8,14 @@ const themeImports = {
   dark:    () => import('../styles/themes/dark.css?url'),
 };
 
+// Themes can opt into a webfont — only loaded when that theme is active.
+const themeFonts = {
+  warm: 'https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap',
+};
+
 const themeLoader = themeImports[config.theme] ?? themeImports.minimal;
 const themeUrl = (await themeLoader()).default;
+const themeFontHref = themeFonts[config.theme];
 
 const { title } = Astro.props;
 const pageTitle = title ? `${title} — ${config.owner.name}` : `Schedule with ${config.owner.name}`;
@@ -20,6 +26,13 @@ const pageTitle = title ? `${title} — ${config.owner.name}` : `Schedule with $
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{pageTitle}</title>
+    {themeFontHref && (
+      <>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link rel="stylesheet" href={themeFontHref} />
+      </>
+    )}
     <link rel="stylesheet" href={themeUrl} />
   </head>
   <body>

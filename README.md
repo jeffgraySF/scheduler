@@ -206,6 +206,12 @@ configuration → Environment variables, then trigger a redeploy.
   set to the other party — the guest's confirmation replies go to the
   owner's inbox, and the owner's notification replies go straight to the
   guest. Same pattern Calendly uses.
+- **One-click accept/decline.** The owner notification email contains
+  HMAC-signed Accept and Decline links. Accept patches the owner's
+  attendee `responseStatus` so the guest sees confirmation; Decline
+  goes through a confirmation page (POST) before deleting the event
+  with `sendUpdates: 'all'`, so the guest gets a cancellation. Requires
+  `SCHEDULER_SIGNING_SECRET`.
 - **Static frontend.** Astro builds to plain HTML/CSS/JS — no SSR, no React.
   The booking flow uses a single page with vanilla-JS step state.
 

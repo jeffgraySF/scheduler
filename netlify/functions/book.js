@@ -13,6 +13,7 @@ import { config, getMeetingType } from '../../src/lib/config.js';
 import { intervalsOverlap } from '../../src/lib/slots.js';
 import { getCalendarClient, CALENDAR_ID, getBusyWindows } from './_lib/google.js';
 import { json } from './_lib/http.js';
+import { signAction } from './_lib/sign.js';
 
 const BOOKING_PROP_KEY = 'schedulerBookingId';
 
@@ -129,7 +130,7 @@ export default async (request) => {
     console.error('Reconciliation list failed (proceeding)', err);
   }
 
-  await sendEmails({ name, email, timezone, slot, meetingType }).catch((e) => {
+  await sendEmails({ name, email, timezone, slot, meetingType, eventId: inserted.id }).catch((e) => {
     console.error('Email send failed', e);
   });
 
@@ -158,7 +159,7 @@ function formatInZone(slot, timezone) {
   });
 }
 
-async function sendEmails({ name, email, timezone, slot, meetingType }) {
+async function sendEmails({ name, email, timezone, slot, meetingType, eventId }) {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM || 'onboarding@resend.dev';
   if (!apiKey) {
@@ -168,6 +169,20 @@ async function sendEmails({ name, email, timezone, slot, meetingType }) {
   const resend = new Resend(apiKey);
   const guestTime = formatInZone(slot, timezone);
   const ownerTime = formatInZone(slot, config.owner.timezone);
+
+  const baseUrl = (process.env.URL || process.env.SCHEDULER_BASE_URL || '').replace(/\/$/, '');
+  const acceptUrl = baseUrl
+    && `${baseUrl}/api/respond?event=${encodeURIComponent(eventId)}&action=accept&token=${signAction(eventId, 'accept')}`;
+  const declineUrl = baseUrl
+    && `${baseUrl}/api/respond?event=${encodeURIComponent(eventId)}&action=decline&token=${signAction(eventId, 'decline')}`;
+
+  const actionButtons = (acceptUrl && declineUrl) ? `
+    <p style="margin-top: 24px;">
+      <a href="${acceptUrl}" style="display: inline-block; padding: 10px 18px; background: #16a34a; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 500;">Accept</a>
+      <a href="${declineUrl}" style="display: inline-block; padding: 10px 18px; background: #fff; color: #b91c1c; border: 1px solid #b91c1c; text-decoration: none; border-radius: 6px; margin-left: 8px; font-weight: 500;">Decline / cancel</a>
+    </p>
+    <p style="font-size: 12px; color: #888;">Accept makes your response visible to the guest. Decline cancels the booking and notifies them.</p>
+  ` : '';
 
   await Promise.all([
     resend.emails.send({
@@ -194,6 +209,7 @@ async function sendEmails({ name, email, timezone, slot, meetingType }) {
           <li>Time (your tz): ${escapeHtml(ownerTime)}</li>
           <li>Time (guest tz): ${escapeHtml(guestTime)}</li>
         </ul>
+        ${actionButtons}
       `,
     }),
   ]);

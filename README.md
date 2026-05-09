@@ -34,11 +34,22 @@ npm install
 ### 2. Configure
 
 ```bash
-cp config.example.js config.js
 cp .env.example .env
 ```
 
-Edit `config.js` — owner info, availability, meeting types, theme.
+Two layers of configuration:
+
+- **`/config.js`** (committed) holds the structural defaults: theme,
+  availability, booking window, meeting types. Edit it to customize the
+  shape of your deployment.
+- **`.env`** (gitignored, local only) and your Netlify env hold per-deployment
+  values: owner identity (required) and any optional overrides. Anything in
+  env wins over `/config.js`.
+
+Required env vars: `SCHEDULER_OWNER_NAME`, `SCHEDULER_OWNER_EMAIL`,
+`SCHEDULER_OWNER_TIMEZONE`. See `.env.example` for the full list including
+optional overrides like `SCHEDULER_THEME` and `SCHEDULER_MEETING_TYPES`
+(JSON).
 
 ### 3. Google Calendar OAuth
 
@@ -76,14 +87,19 @@ Push to GitHub, then in Netlify:
 
 1. **Add new site → Import from Git** — pick the repo.
 2. Build settings auto-detect from `netlify.toml`.
-3. **Site settings → Environment variables** — add everything from `.env` (do NOT commit it).
+3. **Site settings → Environment variables** — add everything from `.env` (do NOT commit it). At minimum: the three `SCHEDULER_OWNER_*` vars, the four `GOOGLE_*` vars, and the two `RESEND_*` vars.
 4. **Domain management → Add custom domain** — point your subdomain at the site.
+
+After this, every `git push` triggers a fresh deploy automatically.
 
 ## Customization
 
+The pattern: edit `/config.js` for things you want everyone (incl. open-source
+forks) to inherit; set env vars for per-deployment overrides.
+
 ### Meeting types
 
-Edit `config.meetingTypes` in `config.js`. Each entry needs:
+Edit `meetingTypes` in `/config.js`. Each entry needs:
 
 - `slug` — URL path (`/intro`)
 - `name` — display name
@@ -91,15 +107,19 @@ Edit `config.meetingTypes` in `config.js`. Each entry needs:
 - `description` — shown on the home page
 - `questions` — array of `{ id, label, required }` shown on the booking form
 
+To override per-deployment without touching code, set
+`SCHEDULER_MEETING_TYPES` to a JSON array.
+
 ### Themes
 
 Drop a CSS file into `src/styles/themes/` defining the standard CSS custom
-properties (see `minimal.css` for the full list), then set `config.theme` to
-the filename (without `.css`). Built-in: `minimal`, `warm`, `dark`.
+properties (see `minimal.css` for the full list), then change `theme` in
+`/config.js` (or set `SCHEDULER_THEME`) to the filename (without `.css`).
+Built-in: `minimal`, `warm`, `dark`.
 
 ### Availability
 
-Edit `config.availability`:
+Edit `availability` in `/config.js`:
 
 - `days` — array of weekday numbers (0 = Sunday)
 - `startHour` / `endHour` — in owner's timezone
@@ -107,6 +127,8 @@ Edit `config.availability`:
 
 To block specific dates (vacation, etc.), just create a busy event on your
 Google Calendar — the freebusy check will skip those times automatically.
+
+For per-deployment overrides, set `SCHEDULER_AVAILABILITY` to a JSON object.
 
 ## Architecture notes
 

@@ -7,11 +7,11 @@ dist/
 
 # netlify
 .netlify/
+deno.lock
 
-# environment + config (never commit)
+# environment (never commit — has secrets)
 .env
 .env.local
-/config.js
 
 # OS / editor
 .DS_Store

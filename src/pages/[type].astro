@@ -349,17 +349,57 @@ const clientData = {
   });
 
   // ---- timezone selector ----
+  // Curated list — one entry per "zone name" so users don't see Pacific
+  // six times (LA, Vancouver, Tijuana, …). Viewer's detected zone is added
+  // if it's not in the list so they can always see/select their own.
   const tzSelect = document.getElementById('tz-select');
-  const zones = (typeof Intl.supportedValuesOf === 'function')
-    ? Intl.supportedValuesOf('timeZone')
-    : [guestTz];
-  // Ensure the detected zone is in the list (some browsers report aliases).
-  if (!zones.includes(guestTz)) zones.unshift(guestTz);
-  zones.forEach((z) => {
+  const curated = [
+    { tz: 'Pacific/Honolulu',    label: 'Hawaii' },
+    { tz: 'America/Anchorage',   label: 'Alaska' },
+    { tz: 'America/Los_Angeles', label: 'Pacific Time' },
+    { tz: 'America/Phoenix',     label: 'Arizona' },
+    { tz: 'America/Denver',      label: 'Mountain Time' },
+    { tz: 'America/Chicago',     label: 'Central Time' },
+    { tz: 'America/Mexico_City', label: 'Mexico City' },
+    { tz: 'America/New_York',    label: 'Eastern Time' },
+    { tz: 'America/Sao_Paulo',   label: 'São Paulo' },
+    { tz: 'Europe/London',       label: 'London' },
+    { tz: 'Europe/Paris',        label: 'Central Europe' },
+    { tz: 'Africa/Johannesburg', label: 'Johannesburg' },
+    { tz: 'Asia/Dubai',          label: 'Dubai' },
+    { tz: 'Asia/Kolkata',        label: 'India' },
+    { tz: 'Asia/Singapore',      label: 'Singapore' },
+    { tz: 'Asia/Tokyo',          label: 'Tokyo' },
+    { tz: 'Australia/Sydney',    label: 'Sydney' },
+    { tz: 'UTC',                 label: 'UTC' },
+  ];
+  if (!curated.some((z) => z.tz === guestTz)) {
+    curated.push({ tz: guestTz, label: guestTz.replace(/_/g, ' ') });
+  }
+
+  const now = new Date();
+  function offsetMinutes(tz) {
+    const parts = new Intl.DateTimeFormat('en', {
+      timeZone: tz, timeZoneName: 'shortOffset',
+    }).formatToParts(now);
+    const s = parts.find((p) => p.type === 'timeZoneName')?.value || 'GMT';
+    const m = s.match(/GMT([+-])(\d{1,2})(?::?(\d{2}))?/);
+    if (!m) return 0;
+    return (m[1] === '-' ? -1 : 1) * (parseInt(m[2], 10) * 60 + (m[3] ? parseInt(m[3], 10) : 0));
+  }
+  function fmtOffset(min) {
+    const sign = min < 0 ? '−' : '+';
+    const a = Math.abs(min);
+    return `UTC${sign}${String(Math.floor(a / 60)).padStart(2, '0')}:${String(a % 60).padStart(2, '0')}`;
+  }
+  const sorted = curated
+    .map((z) => ({ ...z, off: offsetMinutes(z.tz) }))
+    .sort((a, b) => a.off - b.off || a.label.localeCompare(b.label));
+  sorted.forEach(({ tz, label, off }) => {
     const opt = document.createElement('option');
-    opt.value = z;
-    opt.textContent = z.replace(/_/g, ' ');
-    if (z === guestTz) opt.selected = true;
+    opt.value = tz;
+    opt.textContent = `(${fmtOffset(off)}) ${label}`;
+    if (tz === guestTz) opt.selected = true;
     tzSelect.appendChild(opt);
   });
   tzSelect.addEventListener('change', () => {

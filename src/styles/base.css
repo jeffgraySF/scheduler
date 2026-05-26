@@ -117,6 +117,28 @@ label {
   gap: 0.5rem;
 }
 
+.tz-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  margin-bottom: 0.75rem;
+}
+.tz-row select {
+  width: auto;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+}
+
+.slot-date-header {
+  font-weight: 600;
+  font-size: 0.9375rem;
+  margin: 1rem 0 0.5rem;
+  color: var(--color-text);
+}
+.slot-date-header:first-child { margin-top: 0; }
+
 .step { display: none; }
 .step.active { display: block; }
 

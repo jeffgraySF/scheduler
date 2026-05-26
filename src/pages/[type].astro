@@ -52,11 +52,14 @@ const clientData = {
         <button type="button" class="btn back" data-back="date">←</button>
         <div>
           <h1 style="font-size: 1.5rem;">Available times</h1>
-          <div class="muted" id="slot-date-label"></div>
         </div>
       </div>
+      <div class="tz-row muted">
+        <span>Times shown in your timezone:</span>
+        <select id="tz-select" aria-label="Display timezone"></select>
+      </div>
       <div id="slot-status" class="muted">Loading…</div>
-      <div class="slot-list" id="slots"></div>
+      <div id="slots"></div>
     </section>
 
     <!-- STEP 3: booking form -->
@@ -98,20 +101,31 @@ const clientData = {
   const root = document.getElementById('booking-app');
   const cfg = JSON.parse(root.dataset.config);
   const guestTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  let displayTz = guestTz;
 
   let viewMonth = startOfMonth(new Date());
   let selectedDate = null;
   let selectedSlot = null;
+  let currentSlots = [];
 
   // ---- helpers ----
   function startOfMonth(d) { const x = new Date(d); x.setDate(1); x.setHours(0,0,0,0); return x; }
   function addMonths(d, n) { const x = new Date(d); x.setMonth(x.getMonth() + n); return x; }
   function fmtDay(d) { return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }); }
-  function fmtTime(iso) { return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); }
+  function fmtTime(iso) {
+    return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: displayTz });
+  }
+  function fmtDateOnly(iso) {
+    return new Date(iso).toLocaleDateString(undefined, {
+      weekday: 'long', month: 'long', day: 'numeric',
+      timeZone: displayTz,
+    });
+  }
   function fmtFull(iso) {
     return new Date(iso).toLocaleString(undefined, {
       weekday: 'long', month: 'long', day: 'numeric',
       hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+      timeZone: displayTz,
     });
   }
   function ymd(d) {
@@ -184,7 +198,7 @@ const clientData = {
   // ---- step 2: slots ----
   async function selectDate(dateStr) {
     selectedDate = dateStr;
-    document.getElementById('slot-date-label').textContent = new Date(dateStr + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+    currentSlots = [];
     showStep('slot');
 
     const slotsEl = document.getElementById('slots');
@@ -200,21 +214,41 @@ const clientData = {
       const { slots } = await res.json();
 
       if (!slots || slots.length === 0) {
+        currentSlots = [];
         status.textContent = 'No times available on this date.';
         return;
       }
       status.style.display = 'none';
-
-      slots.forEach((iso) => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.textContent = fmtTime(iso);
-        btn.addEventListener('click', () => selectSlot(iso));
-        slotsEl.appendChild(btn);
-      });
+      currentSlots = slots;
+      renderSlots();
     } catch (err) {
       status.textContent = `Could not load times. ${err.message}`;
     }
+  }
+
+  function renderSlots() {
+    const slotsEl = document.getElementById('slots');
+    slotsEl.innerHTML = '';
+    let currentHeader = null;
+    let currentGrid = null;
+    currentSlots.forEach((iso) => {
+      const dateLabel = fmtDateOnly(iso);
+      if (dateLabel !== currentHeader) {
+        currentHeader = dateLabel;
+        const h = document.createElement('div');
+        h.className = 'slot-date-header';
+        h.textContent = dateLabel;
+        slotsEl.appendChild(h);
+        currentGrid = document.createElement('div');
+        currentGrid.className = 'slot-list';
+        slotsEl.appendChild(currentGrid);
+      }
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = fmtTime(iso);
+      btn.addEventListener('click', () => selectSlot(iso));
+      currentGrid.appendChild(btn);
+    });
   }
 
   // ---- step 3: form ----
@@ -312,6 +346,26 @@ const clientData = {
   // ---- back buttons ----
   root.querySelectorAll('[data-back]').forEach((b) => {
     b.addEventListener('click', () => showStep(b.dataset.back));
+  });
+
+  // ---- timezone selector ----
+  const tzSelect = document.getElementById('tz-select');
+  const zones = (typeof Intl.supportedValuesOf === 'function')
+    ? Intl.supportedValuesOf('timeZone')
+    : [guestTz];
+  // Ensure the detected zone is in the list (some browsers report aliases).
+  if (!zones.includes(guestTz)) zones.unshift(guestTz);
+  zones.forEach((z) => {
+    const opt = document.createElement('option');
+    opt.value = z;
+    opt.textContent = z.replace(/_/g, ' ');
+    if (z === guestTz) opt.selected = true;
+    tzSelect.appendChild(opt);
+  });
+  tzSelect.addEventListener('change', () => {
+    displayTz = tzSelect.value;
+    if (currentSlots.length) renderSlots();
+    if (selectedSlot) document.getElementById('form-slot-label').textContent = fmtFull(selectedSlot);
   });
 
   renderCalendar();

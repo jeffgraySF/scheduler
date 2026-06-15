@@ -28,7 +28,10 @@ const CALENDAR_IDS_TTL_MS = 10 * 60_000;
 let calendarIdsCache = null; // { ids, expires }
 
 async function fetchConflictCalendarIds(calendar) {
-  const { data } = await calendar.calendarList.list({ minAccessRole: 'reader' });
+  // freeBusyReader (not reader) is the floor: calendars shared with you as
+  // "free/busy only" have accessRole 'freeBusyReader', and we only ever need
+  // their busy windows. minAccessRole: 'reader' would silently drop them.
+  const { data } = await calendar.calendarList.list({ minAccessRole: 'freeBusyReader' });
   const ids = (data.items ?? [])
     .filter((c) => !c.hidden && c.selected === true)
     .map((c) => c.id);

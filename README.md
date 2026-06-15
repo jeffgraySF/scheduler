@@ -161,9 +161,10 @@ disappear from the booking grid automatically.
 **Which calendars count as busy:** every calendar you have currently
 *shown* in your Gmail/Google Calendar left sidebar (`selected: true` in
 Google's API). Work Gmail, school schedules, family calendars, kids'
-sports — anything visible in your UI blocks the matching time. Hide a
-calendar in Gmail to stop it from blocking; show it to start. No code
-or config change required.
+sports — anything visible in your UI blocks the matching time, including
+calendars shared with you as *free/busy only* (`accessRole:
+freeBusyReader`). Hide a calendar in Gmail to stop it from blocking; show
+it to start. No code or config change required.
 
 The booking event itself is always written to the calendar identified
 by `GOOGLE_CALENDAR_ID` (defaults to `primary`).
